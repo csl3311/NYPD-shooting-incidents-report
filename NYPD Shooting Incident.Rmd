@@ -1,0 +1,97 @@
+---
+title: "NYPD Shooting Incident"
+date: "1/26/2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+## Background:
+This analysis is based on the "NYPD Shooting Incident Data(Historic)" from the website:https://catalog.data.gov/datase. The data lists all shooting incidents happened in NYC from 2006 to 2020, recorded the incident locations, the date and time of occurrence, the age group, race and gender of the victim. The dataset I am interested in finding the relationship between the gender&races of victims and the occurrence time in different locations. 
+
+```{r get_NYPD_data,message = FALSE}
+library(tidyverse)
+library(lubridate)
+library(readr)
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+```
+
+```{r import_data, message=FALSE}
+data <- read_csv(url_in)
+head(data)
+```
+***After looking at the original file, the data set includes the data like precinct, jurisdiction code, location desc, and everything after X coord which are non-essential for this analysis, so we will get rid of those data. Also, we will arrange our data by date and time.***
+
+```{r cleaning}
+data1 <- data %>%
+  select(-c(PRECINCT,JURISDICTION_CODE, LOCATION_DESC, X_COORD_CD:Lon_Lat)) %>%
+  mutate(OCCUR_DATE = as.Date(OCCUR_DATE, format = "%m/%d/%Y")) %>%
+  arrange(OCCUR_DATE,OCCUR_TIME)
+
+data1
+summary(data1)
+```
+
+**Visualization 1: relationship between Victim Race and Victim Gender**
+
+```{r visualization1, message = FALSE}
+visual1 <- data1 %>% 
+  group_by(VIC_RACE, VIC_SEX) %>% 
+  summarise(count = n()) %>% 
+  ungroup()
+visual1
+
+  ggplot(visual1, aes(x = VIC_RACE, y = count, fill = VIC_SEX)) +
+    geom_bar(position = "dodge", stat = "identity") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    labs(x = "Victim Race", y = "Victim Number")
+```
+
+***Analysis 1:***
+
+Based on the graph above, the number of unknown race and unknown gender are at low frequency which are negligible, so the numbers of cases are reliable for analysis. As noticed, for all races, the male victims are more than the female victims. Also, for all races, mostly the victims are Black people, followed by White Hispanic, black Hispanic, White, Asian/Pacific Islander and lastly are American Indian/Alaskan natives.
+
+
+
+**Visualization 2: relationship between Incident Occur Time(by hours) and Borough where shooting occurred**
+
+```{r visualization2, message = FALSE}
+visual2 <- data1 %>% 
+  mutate(OCCUR_TIME = format(as.POSIXct(OCCUR_TIME), format = "%H")) %>% 
+  group_by(OCCUR_TIME,BORO) %>%  
+  summarise(count = n()) %>% 
+  ungroup()
+
+  ggplot(visual2,aes(x = OCCUR_TIME, y = count, group = BORO, color = BORO)) +
+    geom_line()
+```
+
+***Analysis 2: ***
+
+According to this plot, it's obvious that between 4AM to 9AM, the shooting incident went down and especially during the morning, the shooting incidents were lowest in a day for all boroughs. While the incidents in Staten Island is approximately steady when the hours changed, the range of incidents by hours in Brooklyn is the widest. There's another interesting result from this plot, that is, the incidents has a curve in Queens while in other boroughs are dropped during the time from 12AM to 4AM.
+
+
+**Model: logistic regression model**
+
+```{r mod}
+data$BORO <- as.factor(data$BORO)
+data$VIC_AGE_GROUP <- as.factor(data$VIC_AGE_GROUP)
+mod <- data %>% 
+  mutate(STATISTICAL_MURDER_FLAG = ifelse(STATISTICAL_MURDER_FLAG == "TRUE", 1, 0))
+
+model <- glm(STATISTICAL_MURDER_FLAG ~ BORO + VIC_AGE_GROUP, data = mod,
+    family = binomial(link = "logit"))
+summary(model)
+```
+***Analysis of this model:***
+
+The baseline of BORO is BRONX, other boroughs all have a p-value greater than 0.05, which means borough is not statistically significant in this model.
+The baseline of Victims Age Range is less than 18, since the coefficient of group 65+ is 1.24884 which is greater than 0 and is the greatest than other groups with a p-value smaller than 0.05, then the log odds of victim age >65 is greater than <18 and other age groups. As the age increases the log odds of victims being murdered also increased.
+
+
+***Bias:***
+For sources of bias, black people is the primary race in this data set, so I think this data set might be bias, and the number of victims between black and other races should not be that much different.
+Personally, I assumed that the number of female victims is larger than male victims, because when the situation is chaotic, the female might run slower than male. However, according to my first visualization, it turned out that the number of male victims is way more than female.
+
+```{r end}
+sessionInfo()
+```
